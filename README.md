@@ -5,7 +5,7 @@ A collection of UX and AI product design skills for [Claude Code](https://claude
 ## Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/awesome-ux-skills.git
+git clone https://github.com/tommyjepsen/awesome-ux-skills
 cd awesome-ux-skills
 ./install.sh
 ```
