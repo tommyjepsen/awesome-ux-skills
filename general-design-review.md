@@ -34,6 +34,7 @@ Use the request to pick the strongest review lens:
 | Situation | Lead lens |
 |---|---|
 | Existing UI, screen, or product flow | Usability, cognitive load, conversion |
+| Accessibility, WCAG, contrast, keyboard, or screen reader concerns | Accessibility |
 | New product or ambiguous design challenge | Double Diamond, research, problem framing |
 | User segments or research notes | Personas, empathy maps, journey maps |
 | Backlog, roadmap, or feature choice | Prioritization |
@@ -60,6 +61,19 @@ For any UI or flow, check:
 - **Help**: Is guidance contextual and close to the moment of need?
 
 Do not list all ten areas by default. Mention only the ones that reveal a real issue or decision.
+
+## Accessibility Lens
+
+For screenshots and UI designs, include a short WCAG 2.1 A/AA pass when relevant. Keep it focused on likely user impact, not full compliance.
+
+Check:
+
+- **Perceivable**: text contrast, text size, color-only meaning, labels, readable hierarchy.
+- **Operable**: visible focus states, target size, keyboard-friendly controls, no gesture-only actions.
+- **Understandable**: clear labels, instructions, errors, required fields, predictable behavior.
+- **Robust**: likely needs for accessible names, semantic controls, status announcements, modal focus handling.
+
+Be clear about limits: screenshots can reveal visual accessibility risks, but cannot prove keyboard access, screen reader behavior, semantic markup, alt text, or actual WCAG conformance.
 
 ## Cognitive Load And Conversion
 
@@ -351,6 +365,14 @@ For most design reviews, keep the response compact:
 
 **Next step**
 [Most useful artifact, test, or decision]
+```
+
+If accessibility is relevant, add only the highest-impact items:
+
+```markdown
+**Accessibility risks**
+- [Contrast/label/focus/keyboard/semantic issue]
+- [Needs verification in implementation]
 ```
 
 If reviewing an AI feature, add:
