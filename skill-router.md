@@ -2,7 +2,7 @@
 name: skill-router
 description: Route any UX, product, or AI design question to the right skill file. Use this
   skill first when the request is ambiguous or spans multiple skills, or when you need to
-  identify which skill to apply. Acts as a decision tree across all 16 available skills.
+  identify which skill to apply. Acts as a decision tree across all available skills.
 ---
 
 # Skill Router
@@ -22,6 +22,8 @@ Read the trigger signals and route accordingly. Multiple skills can apply — wh
 | "create an empathy map", "synthesize these interviews", "says/thinks/does/feels" | `empathy-mapping` |
 | "storyboard", "visualize a user scenario", "show how a user would use X" | `ux-storyboard` |
 | "prioritize features", "what should we build first", "rank the backlog", "impact vs effort" | `feature-prioritization` |
+| "general design review", "broad design critique", "review this product", "review this feature end-to-end" | `general-design-review` |
+| "accessibility review", "WCAG audit", "is this accessible", "contrast review", "screen reader" | `accessibility` |
 | "review this UI", "heuristic audit", "is this good UX", "critique this design" | `ux-heuristics-review` |
 | "reduce friction", "why aren't users converting", "improve this flow", "simplify this" | `cognitive-load-conversion` |
 | "make this more engaging", "improve this CTA", "nudge users", "reduce drop-off" | `persuasive-ux` |
@@ -73,6 +75,8 @@ Does it involve…
 
 ```
 Does it involve…
+├── Broad UX/product/AI critique across multiple lenses?     → general-design-review
+├── Accessibility, WCAG, contrast, keyboard, or screen reader review? → accessibility
 ├── General heuristic audit or design critique?              → ux-heuristics-review
 ├── Reducing drop-off, simplifying forms, cutting friction?  → cognitive-load-conversion
 └── Making users more likely to take an action or convert?   → persuasive-ux
@@ -96,6 +100,7 @@ Does it involve…
 | Designing AI input/output interaction | `ai-inputs` | `ai-tuners` |
 | Turning interviews into design artifacts | `ux-personas` | `empathy-mapping`, `journey-mapping` |
 | Critiquing a live product flow | `ux-heuristics-review` | `cognitive-load-conversion`, `persuasive-ux` |
+| Reviewing accessibility of a screenshot or mockup | `accessibility` | `ux-heuristics-review` |
 | Deciding what to research or build next | `ux-research-methods` | `feature-prioritization` |
 
 ---
@@ -110,10 +115,12 @@ Does it involve…
 | `ai-trust-builders.md` | ai-trust-builders | 7 trust patterns: caveat, consent, disclosure, watermark, footprints… |
 | `ai-tuners.md` | ai-tuners | 9 tuner patterns: attachments, connectors, filters, modes, parameters… |
 | `ai-wayfinders.md` | ai-wayfinders | 8 onboarding patterns to reduce blank-slate anxiety |
+| `accessibility.md` | accessibility | Review screenshots and UI designs against WCAG 2.1 |
 | `cognitive-load-conversion.md` | cognitive-load-conversion | Audit UI to cut extraneous load and improve conversion |
 | `double-diamond.md` | double-diamond | Guide teams through Discover → Define → Develop → Deliver |
 | `empathy-mapping.md` | empathy-mapping | Create Says/Thinks/Does/Feels maps from user research |
 | `feature-prioritization.md` | feature-prioritization | Rank features using a 2D weighted prioritization matrix |
+| `general-design-review.md` | general-design-review | Compact UX, product, and AI review across frameworks |
 | `journey-mapping.md` | journey-mapping | Map user actions, thoughts, and emotions across a timeline |
 | `persuasive-ux.md` | persuasive-ux | Apply Fogg's 7 persuasive tools to increase engagement |
 | `ux-heuristics-review.md` | ux-heuristics-review | Critique UI against Nielsen's 10 Usability Heuristics |

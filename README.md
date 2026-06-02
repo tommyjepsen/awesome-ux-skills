@@ -35,6 +35,8 @@ Re-install or update existing skills:
 
 | Skill | What it does |
 |---|---|
+| `general-design-review` | Runs a compact UX, product, and AI design review across the existing frameworks |
+| `accessibility` | Reviews screenshots, mockups, and flows against WCAG 2.1 accessibility guidelines |
 | `ux-heuristics-review` | Audits any UI against Nielsen's 10 Usability Heuristics |
 | `cognitive-load-conversion` | Finds extraneous load in forms, flows, and layouts — and cuts it |
 | `persuasive-ux` | Applies Fogg's 7 Persuasive Technology tools to improve engagement and conversion |
