@@ -53,12 +53,6 @@ Re-install or update existing skills:
 | `ai-tuners` | Lets users configure AI behavior: model switching, filters, modes, parameters, voice & tone |
 | `ai-wayfinders` | Reduces blank-slate anxiety with onboarding patterns: example prompts, galleries, tooltips |
 
-### Meta
-
-| Skill | What it does |
-|---|---|
-| `skill-router` | Routes any ambiguous UX or product design question to the right skill |
-
 ## How it works
 
 Each `.md` file is a Claude Code skill — a prompt that loads into Claude's context when triggered. Claude detects from your request which skill applies and uses it automatically. You can also invoke any skill directly with `/skill-name`.
