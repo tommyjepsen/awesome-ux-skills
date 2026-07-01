@@ -11,18 +11,24 @@ skipped=0
 
 for file in "${REPO_DIR}"/*.md; do
   name="$(basename "$file" .md)"
+
+  # README is documentation, not a skill.
+  if [[ "$name" == "README" ]]; then
+    continue
+  fi
+
   dest="${SKILLS_DIR}/${name}"
 
   if [[ -d "$dest" && "${1:-}" != "--force" ]]; then
     echo "  skip  ${name} (already exists, use --force to overwrite)"
-    ((skipped++))
+    skipped=$((skipped + 1))
     continue
   fi
 
   mkdir -p "$dest"
   cp "$file" "${dest}/SKILL.md"
   echo "  ✓     ${name}"
-  ((installed++))
+  installed=$((installed + 1))
 done
 
 echo ""
