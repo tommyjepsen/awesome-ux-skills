@@ -34,6 +34,7 @@ Use the request to pick the strongest review lens:
 | Situation | Lead lens |
 |---|---|
 | Existing UI, screen, or product flow | Usability, cognitive load, conversion |
+| Polished-looking UI code, styling, or "make this look less generic" | Visual craft |
 | Accessibility, WCAG, contrast, keyboard, or screen reader concerns | Accessibility |
 | New product or ambiguous design challenge | Double Diamond, research, problem framing |
 | User segments or research notes | Personas, empathy maps, journey maps |
@@ -95,6 +96,25 @@ Useful tests:
 - **Memory test**: Is the user forced to remember something the UI could show?
 
 Do not remove all friction. Keep friction when it prevents irreversible, costly, or harmful mistakes.
+
+## Visual Craft Lens
+
+For high-fidelity UI or frontend code, run a quick pass against the 12 craft rules (see the `craft` skill for the full version with fixes):
+
+1. **No gradients** — flat, deliberate color; a gradient is usually an unmade color decision.
+2. **No glow** — emphasis from size, weight, contrast, and space; shadows are for elevation only.
+3. **No `transition: all`** — transition named properties with explicit durations and easings.
+4. **Kill visual monotony** — break same-width, same-weight, all-centered rhythm; hierarchy should survive the squint test.
+5. **No placeholder text** — real microcopy is part of the design.
+6. **Contained stacking contexts** — `isolation: isolate` per layered component, one small z-index scale, no `z-index: 9999`.
+7. **No pure black or white** — tuned neutral ramps for text, backgrounds, and borders.
+8. **Space on a scale** — 4/8px grid; gaps within a group smaller than gaps between groups.
+9. **Type does the work** — small scale, hierarchy from weight and color, max measure for body text.
+10. **One elevation language** — borders for structure or shadows for floating, not both stacked.
+11. **Every state designed** — hover, focus-visible, active, disabled, loading, empty, error.
+12. **Motion is physics** — 120–250ms, transform/opacity only, `prefers-reduced-motion` respected.
+
+Report only violations, with concrete replacement values. Skip this lens for wireframes, flows, and early-stage concepts.
 
 ## Persuasive UX
 
