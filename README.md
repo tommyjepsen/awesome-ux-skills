@@ -30,6 +30,7 @@ Re-install or update existing skills:
 | `journey-mapping` | Maps user actions, emotions, and pain points across a timeline |
 | `ux-storyboard` | Visualizes a user scenario as a panel-by-panel storyboard |
 | `double-diamond` | Guides teams through Discover → Define → Develop → Deliver |
+| `like-wish-what-if` | Structures critique and retrospectives with the d.school's "I like, I wish, What if" feedback framework |
 
 ### UI Analysis & Improvement
 
