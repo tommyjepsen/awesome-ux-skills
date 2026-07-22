@@ -39,6 +39,7 @@ Re-install or update existing skills:
 | `general-design-review` | Runs a compact UX, product, and AI design review across the existing frameworks |
 | `accessibility` | Reviews screenshots, mockups, and flows against WCAG 2.1 accessibility guidelines |
 | `ux-heuristics-review` | Audits any UI against Nielsen's 10 Usability Heuristics |
+| `dieter-rams-principles` | Evaluates a digital product against Dieter Rams' 10 Principles of Good Design (honest, useful, as little design as possible…) |
 | `craft` | Checks UI code and designs against 12 visual-craft rules: no gradients, no glow, no `transition: all`, no placeholder text, contained stacking contexts, and more |
 | `cognitive-load-conversion` | Finds extraneous load in forms, flows, and layouts — and cuts it |
 | `persuasive-ux` | Applies Fogg's 7 Persuasive Technology tools to improve engagement and conversion |
