@@ -114,7 +114,7 @@ async function harvest(page) {
 
     const fonts = new Map(), sizes = new Map(), weights = new Map(), tracking = new Map();
     const fg = new Map(), bg = new Map(), border = new Map();
-    const radius = new Map(), shadow = new Map(), gaps = new Map(), pads = new Map();
+    const radius = new Map(), shadow = new Map(), gaps = new Map(), pads = new Map(), grids = new Map();
     const transitions = new Map(), animations = new Map();
     const type = []; // representative text runs, largest first
 
@@ -131,10 +131,19 @@ async function harvest(page) {
         const fam = s.fontFamily.split(',')[0].replace(/["']/g, '').trim();
         bump(fonts, fam); bump(sizes, `${px(s.fontSize)}px`); bump(weights, s.fontWeight);
         bump(tracking, s.letterSpacing); bump(fg, toHex(s.color));
+        const w = Math.round(el.getBoundingClientRect().width);
+        // Widest rendered line box, not the container: a short label in a wide
+        // block measures short, and a wrapped paragraph measures its real column.
+        const range = document.createRange(); range.selectNodeContents(el);
+        const rects = [...range.getClientRects()].filter(r => r.width > 0);
+        const lineWidth = rects.length ? Math.round(Math.max(...rects.map(r => r.width))) : w;
         type.push({
           tag: el.tagName.toLowerCase(), size: px(s.fontSize), weight: +s.fontWeight,
           family: fam, lineHeight: s.lineHeight === 'normal' ? 'normal' : px(s.lineHeight),
           letterSpacing: s.letterSpacing, transform: s.textTransform, color: toHex(s.color),
+          blockWidth: w, lineWidth, lines: rects.length,
+          // measure in characters: ~0.5em average advance width for Latin text
+          measureCh: Math.round(lineWidth / (px(s.fontSize) * 0.5)),
           sample: text.slice(0, 70),
         });
       }
@@ -145,6 +154,11 @@ async function harvest(page) {
       if (px(s.borderTopLeftRadius) > 0) bump(radius, s.borderTopLeftRadius);
       if (s.boxShadow !== 'none') bump(shadow, s.boxShadow);
       if (/flex|grid/.test(s.display) && s.gap !== 'normal' && px(s.gap) > 0) bump(gaps, s.gap);
+      // computed grid templates resolve to px — column counts and widths, for free
+      if (s.display.includes('grid') && s.gridTemplateColumns !== 'none') {
+        const cols = s.gridTemplateColumns.split(' ').length;
+        bump(grids, `${cols} cols: ${s.gridTemplateColumns}`);
+      }
       for (const p of ['paddingTop', 'paddingLeft']) if (px(s[p]) > 0) bump(pads, `${px(s[p])}px`);
       if (s.transitionDuration !== '0s') {
         const props = s.transitionProperty.split(', '), durs = s.transitionDuration.split(', '),
@@ -197,7 +211,7 @@ async function harvest(page) {
                     runs: type.sort((a, b) => b.size - a.size).slice(0, 22) },
       color: { text: top(fg), backgrounds: top(bg), borders: top(border, 8) },
       shape: { radii: top(radius, 8), shadows: top(shadow, 6) },
-      space: { gaps: top(gaps, 10), paddings: top(pads, 12), commonWidths: top(widths, 6) },
+      space: { gaps: top(gaps, 10), paddings: top(pads, 12), commonWidths: top(widths, 6), gridTemplates: top(grids, 8) },
       motion: { transitions: top(transitions, 10), animations: top(animations, 5) },
       media: { images: imgs.slice(0, 24), imageCount: imgs.length, svgCount: svgs, videoCount: videos },
       cssVariables: vars,
@@ -334,8 +348,11 @@ const result = await page.evaluate(async ({ dataUri, maxColors }) => {
   }
 
   // ---- composition: where is the ink? ----
-  const isBg = rgb => dist(rgb, dominant) < 24;
-  let ink = 0;
+  // Threshold stays tight: on a dark UI, panel surfaces sit only ~20 away from
+  // the page background, and a loose threshold counts every panel as empty field.
+  const isBg = rgb => dist(rgb, dominant) < 12;
+  const grey = ([r, g, b]) => (r + g + b) / 3;
+  let ink = 0, edges = 0;
   const ROWS = 24, COLS = 24;
   const rowInk = new Array(ROWS).fill(0), colInk = new Array(COLS).fill(0);
   const step = Math.max(1, Math.round(Math.min(W, H) / 400));
@@ -343,6 +360,10 @@ const result = await page.evaluate(async ({ dataUri, maxColors }) => {
   for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
     const rgb = at(x, y); sampled++;
     if (!isBg(rgb)) { ink++; rowInk[Math.min(ROWS - 1, Math.floor(ROWS * y / H))]++; colInk[Math.min(COLS - 1, Math.floor(COLS * x / W))]++; }
+    // local gradient: detail density, independent of which color is the background
+    const g0 = grey(rgb);
+    if (x + step < W && Math.abs(g0 - grey(at(x + step, y))) > 12) edges++;
+    else if (y + step < H && Math.abs(g0 - grey(at(x, y + step))) > 12) edges++;
   }
   const norm = a => { const mx = Math.max(...a) || 1; return a.map(v => +(v / mx).toFixed(2)); };
   const grid = [];
@@ -382,7 +403,8 @@ const result = await page.evaluate(async ({ dataUri, maxColors }) => {
     contrastPairs: pairs.sort((a, b) => b.ratio - a.ratio).slice(0, 8),
     composition: {
       inkCoverage: +(100 * ink / sampled).toFixed(1),
-      whitespaceShare: +(100 - 100 * ink / sampled).toFixed(1),
+      backgroundShare: +(100 - 100 * ink / sampled).toFixed(1),
+      edgeDensity: +(100 * edges / sampled).toFixed(1),
       rowDensity: rowN,
       colDensity: colN,
       horizontalCentroid: centroid(colInk),
@@ -390,6 +412,7 @@ const result = await page.evaluate(async ({ dataUri, maxColors }) => {
       mirrorSymmetry: mirror(colN),
       balance: (() => { const c = centroid(colInk);
         return c < 0.45 ? 'weighted left' : c > 0.55 ? 'weighted right' : 'horizontally centered'; })(),
+      gridDominantColors: grid,
     },
   };
 }, { dataUri, maxColors });
@@ -408,7 +431,8 @@ Run it on the **fold** shot for the palette that greets a visitor, and on the **
 
 | Field | Meaning |
 |---|---|
-| `inkCoverage` / `whitespaceShare` | Share of pixels that differ from the dominant background. Under ~20% ink reads airy; over ~50% reads dense |
+| `inkCoverage` / `backgroundShare` | Share of pixels that differ from / match the dominant background color. Measured reference points: an airy marketing page ≈ 17% ink, a panelled dashboard ≈ 32%, a full-bleed photograph ≈ 70%. On a light page `backgroundShare` is roughly whitespace; on a dark UI it is the field the panels sit on, which is not the same thing — don't call it whitespace there |
+| `edgeDensity` | Share of pixels on a hard tonal edge. This is a *detail* measure, not a fullness measure: text-heavy layouts and textured photography push it up, while large flat fields keep it low even when the screen is packed. A dense dashboard of flat panels can score below an airy marketing page. Use it to separate "detailed" from "flat", and `inkCoverage` to separate "full" from "empty" |
 | `rowDensity` | 24 horizontal bands, normalized. Zeros are breathing room; runs of high values are content blocks. This is the page's vertical rhythm |
 | `colDensity` | 24 vertical bands. Peaks are content columns; flat edges are margins |
 | `horizontalCentroid` | 0.5 = visual weight centered, <0.45 left, >0.55 right |
@@ -437,7 +461,7 @@ Report on these. Skip a dimension when the input genuinely has nothing to say ab
 - **Families and roles**: which face for display, body, UI, mono. Classify each: geometric sans, grotesque, humanist sans, transitional/old-style serif, didone, slab, mono, script, display. Name the actual family from `typography.families` and `webfonts` — and flag when the rendered family is a system fallback rather than the intended webfont (a `(unloaded)` status or a bare `Arial`/`Helvetica` on a designed page is the tell).
 - **Scale**: list the sizes actually used, largest to smallest, and the ratio between steps (`64 / 40 / 24 / 16` ≈ 1.5–1.6, a major-third-ish scale). Say whether it is a tight scale (3–5 steps, disciplined) or sprawling (12 near-duplicate sizes, no system).
 - **Weights**: how many, and how hierarchy is carried — by weight, size, color, or case.
-- **Line height and measure**: line-height ratios per level (display ~1.0–1.2, body ~1.4–1.6) and the body measure in characters (~45–75ch is comfortable; over ~90ch is a wall).
+- **Line height and measure**: line-height ratios per level (display ~1.0–1.2, body ~1.4–1.6) and the body measure from `runs[].measureCh` (~45–75ch is comfortable; over ~90ch is a wall). `measureCh` comes from the widest rendered line box, so a short label in a wide container reads short and a wrapped paragraph reads its true column; it assumes a 0.5em average advance, so treat it as ±10%. `runs[].lines` tells you how many line boxes a run occupies — a display headline wrapping to three lines is a layout fact worth reporting.
 - **Tracking and case**: negative tracking on display type, positive tracking on small caps/eyebrows, `text-transform: uppercase` usage.
 - **Pairing logic**: does the pairing contrast on classification (serif display + sans UI) or vary within one family? Is it a single-family system?
 
@@ -453,7 +477,7 @@ Report on these. Skip a dimension when the input genuinely has nothing to say ab
 
 ### 3. Layout and composition
 
-- **Container and grid**: content width from `space.commonWidths`, apparent column count, gutter widths from `space.gaps`.
+- **Container and grid**: content width from `space.commonWidths`, column structure from `space.gridTemplates` (computed styles resolve `repeat(4, 1fr)` to real px widths, so this gives both the count and the ratio — a `216px 1128px` template is a sidebar shell, `4 cols: 273px 273px 273px 273px` is a KPI row), gutters from `space.gaps`.
 - **Structure**: the fold's anatomy (nav / eyebrow / headline / support / CTA / media) and the page's section sequence from `rowDensity`.
 - **Alignment and balance**: left-aligned vs centered, `horizontalCentroid`, `mirrorSymmetry`, and whether asymmetry looks intentional.
 - **Density and rhythm**: `inkCoverage`, section padding values, whether the vertical rhythm alternates (dense/airy) or repeats identically.
