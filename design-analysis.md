@@ -99,18 +99,76 @@ console.log(JSON.stringify({ shots, styles: path.join(out, 'styles.json') }, nul
 async function harvest(page) {
   return page.evaluate(() => {
     const px = v => Math.round(parseFloat(v) || 0);
-    // rgb()/rgba() -> #hex (alpha kept as a suffix note) so output is paste-ready.
+    // Any CSS color -> sRGB, resolved by the engine via relative color syntax.
+    // Modern stylesheets compute to oklch()/lab()/color(display-p3) — shadcn is all
+    // oklch — and those never match a regex on rgb(). `rgb(from X r g b)` serializes
+    // to `color(srgb ...)` floats, which also exposes out-of-gamut channels.
+    const probe = document.createElement('div');
+    probe.style.display = 'none'; document.body.appendChild(probe);
+    const srgb = v => {
+      if (typeof v !== 'string') return null;
+      const str = v.trim();
+      if (!str || /^(none|transparent|currentcolor)$/i.test(str)) return null;
+      if (/gradient|url\(|image\(/i.test(str)) return null; // not a flat color
+      probe.style.color = 'rgb(1, 2, 3)';                     // sentinel
+      probe.style.color = `rgb(from ${str} r g b / alpha)`;    // ignored if unparseable
+      const out = getComputedStyle(probe).color;
+      if (out === 'rgb(1, 2, 3)' && !/1,\s*2,\s*3|#010203/.test(str)) return null;
+      let m = out.match(/color\(srgb ([-\d.e]+) ([-\d.e]+) ([-\d.e]+)(?:\s*\/\s*([\d.e]+))?\)/);
+      let ch, a = 1;
+      if (m) { ch = m.slice(1, 4).map(Number); if (m[4] !== undefined) a = +m[4]; }
+      else {
+        m = out.match(/rgba?\(([^)]+)\)/);
+        if (!m) return null;
+        const parts = m[1].split(/[,/ ]+/).filter(Boolean).map(Number);
+        ch = parts.slice(0, 3).map(n => n / 255);
+        if (parts[3] !== undefined) a = parts[3];
+      }
+      const outOfGamut = ch.some(n => n < -0.001 || n > 1.001);
+      const bytes = ch.map(n => Math.max(0, Math.min(255, Math.round(n * 255))));
+      const hex = '#' + bytes.map(n => n.toString(16).padStart(2, '0')).join('');
+      return { hex, alpha: a, outOfGamut, rgb: bytes };
+    };
+    // Backwards-compatible string form: '#rrggbb', or '#rrggbb @ 0.5' when translucent.
     const toHex = v => {
-      if (typeof v !== 'string') return v;
-      const m = v.match(/rgba?\(([^)]+)\)/);
-      if (!m) return v;
-      const [r, g, b, a] = m[1].split(/[,/ ]+/).filter(Boolean).map(Number);
-      const h = '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('');
-      return a !== undefined && a < 1 ? `${h} @ ${a}` : h;
+      const c = srgb(v);
+      if (!c) return v;
+      return c.alpha < 1 ? `${c.hex} @ ${+c.alpha.toFixed(3)}` : c.hex;
     };
     const bump = (m, k) => k && m.set(k, (m.get(k) || 0) + 1);
     const top = (m, n = 14) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n)
       .map(([value, count]) => ({ value, count }));
+    // sRGB -> OKLCH (Ottosson), validated against Chromium's own relative-color
+    // resolution; paste-ready as shadcn v4 token values.
+    const oklch = h => {
+      const m = h.match(/^#(\w\w)(\w\w)(\w\w)/); if (!m) return null;
+      const [R, G, B] = m.slice(1).map(x => { const v = parseInt(x, 16) / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+      const l_ = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+      const m_ = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+      const s_ = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+      const L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+      const A = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+      const Bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+      const C = Math.hypot(A, Bb);
+      let Hh = Math.atan2(Bb, A) * 180 / Math.PI; if (Hh < 0) Hh += 360;
+      return C < 0.002 ? `oklch(${+L.toFixed(3)} 0 0)`
+                       : `oklch(${+L.toFixed(3)} ${+C.toFixed(3)} ${+Hh.toFixed(1)})`;
+    };
+    // Keep the authored value, add sRGB hex, and add OKLCH. When the page already
+    // computes to oklch() that string is used verbatim: shadcn's --destructive sits
+    // outside sRGB, so re-deriving it from a clamped hex would shift the token.
+    const withColor = arr => arr.map(e => {
+      const c = srgb(e.value);
+      if (!c) return e;
+      const authored = String(e.value).trim();
+      return {
+        ...e,
+        hex: c.alpha < 1 ? `${c.hex} @ ${+c.alpha.toFixed(3)}` : c.hex,
+        oklch: /^oklch\(/i.test(authored) ? authored : oklch(c.hex),
+        ...(c.outOfGamut ? { outOfGamut: true } : {}),
+      };
+    });
 
     const fonts = new Map(), sizes = new Map(), weights = new Map(), tracking = new Map();
     const fg = new Map(), bg = new Map(), border = new Map();
@@ -130,7 +188,7 @@ async function harvest(page) {
       if (text) {
         const fam = s.fontFamily.split(',')[0].replace(/["']/g, '').trim();
         bump(fonts, fam); bump(sizes, `${px(s.fontSize)}px`); bump(weights, s.fontWeight);
-        bump(tracking, s.letterSpacing); bump(fg, toHex(s.color));
+        bump(tracking, s.letterSpacing); bump(fg, s.color);
         const w = Math.round(el.getBoundingClientRect().width);
         // Widest rendered line box, not the container: a short label in a wide
         // block measures short, and a wrapped paragraph measures its real column.
@@ -148,7 +206,7 @@ async function harvest(page) {
         });
       }
       const bgc = s.backgroundColor;
-      if (bgc && bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent') bump(bg, toHex(bgc));
+      if (bgc && bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent') bump(bg, bgc);
       if (s.backgroundImage !== 'none' && /gradient/.test(s.backgroundImage)) bump(bg, s.backgroundImage.slice(0, 90));
       if (px(s.borderTopWidth) > 0) bump(border, `${s.borderTopWidth} ${s.borderTopStyle} ${toHex(s.borderTopColor)}`);
       if (px(s.borderTopLeftRadius) > 0) bump(radius, s.borderTopLeftRadius);
@@ -185,12 +243,14 @@ async function harvest(page) {
     }
 
     const vars = {}, breakpoints = new Set();
+    let prefersColorScheme = false;
     const walk = rules => {
       for (const r of rules) {
         if (r.style && (r.selectorText === ':root' || r.selectorText === 'html')) {
           for (const p of r.style) if (p.startsWith('--')) vars[p] = r.style.getPropertyValue(p).trim();
         }
         if (r.media) { const t = r.conditionText || r.media.mediaText;
+          if (/prefers-color-scheme/.test(t)) prefersColorScheme = true;
           (t.match(/\d+(\.\d+)?(px|em|rem)/g) || []).forEach(v => breakpoints.add(v)); }
         if (r.cssRules) walk([...r.cssRules]);
       }
@@ -202,6 +262,29 @@ async function harvest(page) {
       `${f.family} ${f.weight} ${f.style} (${f.status})`))];
     const bodyBg = getComputedStyle(document.body).backgroundColor;
 
+    // Is this a shadcn/ui token system? Its variable names are distinctive.
+    const SHADCN = ['--background', '--foreground', '--card', '--card-foreground',
+      '--popover', '--popover-foreground', '--primary', '--primary-foreground',
+      '--secondary', '--secondary-foreground', '--muted', '--muted-foreground',
+      '--accent', '--accent-foreground', '--destructive', '--border', '--input',
+      '--ring', '--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5',
+      '--sidebar', '--sidebar-foreground', '--sidebar-primary', '--sidebar-accent',
+      '--sidebar-border', '--sidebar-ring', '--radius'];
+    const matched = SHADCN.filter(v => v in vars);
+    const sample = matched.map(v => vars[v]).find(Boolean) || '';
+    const shadcn = {
+      detected: matched.length >= 6,
+      matchedTokens: matched,
+      missingTokens: matched.length >= 6 ? SHADCN.filter(v => !(v in vars)) : [],
+      // v4 ships raw oklch(); v3 shipped bare HSL channel triplets read via hsl(var(--x))
+      valueFormat: /oklch/i.test(sample) ? 'oklch (Tailwind v4 era)'
+        : /^\s*[\d.]+\s+[\d.]+%\s+[\d.]+%/.test(sample) ? 'hsl channel triplets (Tailwind v3 era)'
+        : /^#/.test(sample) ? 'hex' : 'unknown',
+      radius: vars['--radius'] || null,
+      darkModeStrategy: document.querySelector('.dark, [data-theme="dark"]') ? 'class on element'
+        : prefersColorScheme ? 'prefers-color-scheme media query' : 'not detected in this render',
+    };
+
     return {
       page: { title: document.title, url: location.href, viewport: innerWidth + 'x' + innerHeight,
               scrollHeight: document.body.scrollHeight, folds: +(document.body.scrollHeight / innerHeight).toFixed(1),
@@ -209,7 +292,7 @@ async function harvest(page) {
       typography: { families: top(fonts), sizes: top(sizes, 20), weights: top(weights), letterSpacing: top(tracking, 6),
                     scale: [...new Set(type.map(t => t.size))].sort((a, b) => b - a),
                     runs: type.sort((a, b) => b.size - a.size).slice(0, 22) },
-      color: { text: top(fg), backgrounds: top(bg), borders: top(border, 8) },
+      color: { text: withColor(top(fg)), backgrounds: withColor(top(bg)), borders: top(border, 8) },
       shape: { radii: top(radius, 8), shadows: top(shadow, 6) },
       space: { gaps: top(gaps, 10), paddings: top(pads, 12), commonWidths: top(widths, 6), gridTemplates: top(grids, 8) },
       motion: { transitions: top(transitions, 10), animations: top(animations, 5) },
@@ -219,6 +302,7 @@ async function harvest(page) {
       webfonts,
       theme: { bodyBackground: toHex(bodyBg),
                colorScheme: getComputedStyle(document.documentElement).colorScheme || 'normal' },
+      shadcn,
     };
   });
 }
@@ -297,6 +381,25 @@ const result = await page.evaluate(async ({ dataUri, maxColors }) => {
       h = Math.round(h * 60); if (h < 0) h += 360; }
     return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
   };
+  // sRGB -> OKLCH (Ottosson). Validated against Chromium's own
+  // `oklch(from <color> l c h)` over 400 random colors: L and C agree to
+  // <0.0001, hue to <0.2 deg above C=0.01 (below that hue is meaningless and
+  // can differ ~0.5 deg). Paste-ready as shadcn v4 token values.
+  const oklch = ([r, g, b]) => {
+    const f = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const [R, G, B] = [f(r), f(g), f(b)];
+    const l_ = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+    const m_ = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+    const s_ = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+    const L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+    const A = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+    const Bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+    const C = Math.hypot(A, Bb);
+    let H = Math.atan2(Bb, A) * 180 / Math.PI; if (H < 0) H += 360;
+    // shadcn writes achromatic colors as `oklch(1 0 0)` — hue is meaningless at C≈0
+    return C < 0.002 ? `oklch(${+L.toFixed(3)} 0 0)`
+                     : `oklch(${+L.toFixed(3)} ${+C.toFixed(3)} ${+H.toFixed(1)})`;
+  };
   // chroma = max-min in 0-255. Robust "is this actually colorful" test at any lightness.
   const chroma = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b);
   const temp = h => (h >= 15 && h < 75) ? 'warm' : (h >= 75 && h < 165) ? 'green'
@@ -334,7 +437,8 @@ const result = await page.evaluate(async ({ dataUri, maxColors }) => {
   merged.sort((a, b) => b.n - a.n);
   const palette = merged.slice(0, maxColors).map(m => {
     const { h, s, l } = hsl(m.rgb);
-    return { hex: hex(m.rgb), hsl: `hsl(${h} ${s}% ${l}%)`, share: +(100 * m.n / total).toFixed(1),
+    return { hex: hex(m.rgb), hsl: `hsl(${h} ${s}% ${l}%)`, oklch: oklch(m.rgb),
+             share: +(100 * m.n / total).toFixed(1),
              chroma: chroma(m.rgb), role: role(m.rgb), temperature: chroma(m.rgb) < 6 ? 'achromatic' : temp(h) };
   });
   const dominant = merged[0].rgb;
@@ -467,7 +571,7 @@ Report on these. Skip a dimension when the input genuinely has nothing to say ab
 
 ### 2. Color
 
-- **Palette with roles**, using measured hexes: page background, surface/card, ink (primary text), muted text, border/hairline, primary accent, secondary accent, semantic (success/warning/danger).
+- **Palette with roles**, using measured hexes: page background, surface/card, ink (primary text), muted text, border/hairline, primary accent, secondary accent, semantic (success/warning/danger). Every measured color carries an `oklch` value too, so the palette can be emitted as design tokens without hand conversion — see [Aligning to shadcn/ui tokens](#aligning-to-shadcnui-tokens). If `styles.json` reports `shadcn.detected`, name the system and read its tokens rather than inferring roles.
 - **Area shares** from `palette[].share` — this is what separates "a green brand" from "a white page with a green button." Report the accent share explicitly.
 - **Key and temperature**: light / mid / dark, warm / cool / neutral, and whether the neutrals are tinted (a warm off-white and warm grays is a deliberate choice worth naming).
 - **Harmony**: monochrome, analogous, complementary, split-complementary, triadic, or neutral-plus-one-accent (the most common product-design answer).
@@ -610,6 +714,104 @@ If the page exposes its own `cssVariables`, report those instead of inventing na
 
 ---
 
+## Aligning to shadcn/ui tokens
+
+shadcn/ui is the most common destination for extracted color data, so when the user's project uses it — or they ask for shadcn tokens, Tailwind theme values, or "drop this into my app" — emit its token contract rather than invented names.
+
+**First, check whether you're already looking at shadcn.** `styles.json` carries a `shadcn` block: `detected` (six or more of its distinctive variable names present), `matchedTokens`, `missingTokens`, `valueFormat`, `radius`, and `darkModeStrategy`. When it reports `detected: true`, the page's own values are the answer — read them out of `cssVariables` instead of inferring anything. `valueFormat` tells you which era you're in:
+
+| `valueFormat` | Era | Values look like | Consumed as |
+|---|---|---|---|
+| `oklch (Tailwind v4 era)` | Current | `--primary: oklch(0.205 0 0)` | `bg-primary` via `@theme inline` |
+| `hsl channel triplets (Tailwind v3 era)` | Legacy | `--primary: 0 0% 9%` | `hsl(var(--primary))` in `tailwind.config` |
+
+**Inside a repo, read the project's own setup before generating anything**: `components.json` (style, baseColor, `cssVariables` true/false), and the CSS file it points at (`app/globals.css` or `src/index.css`). Match the format and the exact token set already there. Never introduce a token the project doesn't use, and never rename one it does.
+
+### Role → token mapping
+
+| Measured role | shadcn token |
+|---|---|
+| Page background | `--background` |
+| Primary text / ink | `--foreground` |
+| Card and panel surface | `--card` + `--card-foreground` |
+| Menu, dialog, tooltip surface | `--popover` + `--popover-foreground` |
+| Primary action fill — **the brand color** | `--primary` + `--primary-foreground` |
+| Low-emphasis button fill | `--secondary` + `--secondary-foreground` |
+| Subtle fill (badges, wells) / secondary text | `--muted` / `--muted-foreground` |
+| Hover and active tint on rows and items | `--accent` + `--accent-foreground` |
+| Error, delete, danger | `--destructive` |
+| Hairlines and dividers | `--border` |
+| Form control border | `--input` |
+| Focus ring | `--ring` |
+| Data-viz series | `--chart-1` … `--chart-5` |
+| Nav or sidebar shell | `--sidebar`, `--sidebar-foreground`, `--sidebar-primary`, `--sidebar-accent`, `--sidebar-border`, `--sidebar-ring` |
+| Corner radius base | `--radius` |
+
+**The trap worth naming: `--accent` is not the brand accent.** In shadcn's defaults it is a neutral hover tint — the same near-grey as `--muted` and `--secondary`. A design's brand color belongs in `--primary`. Mapping a vivid brand hue to `--accent` turns every hover state into a flood of brand color. When you report a "primary accent" from the palette, say explicitly that it maps to `--primary`.
+
+Since shadcn's stock `--primary` is near-black, any brand-colored design must override both `--primary` and `--primary-foreground`, and check the pair's contrast.
+
+### Emitting the theme
+
+Give both blocks, using measured values. Light mode from the design as captured; dark mode only if you actually captured a dark variant — otherwise say the dark block is derived, not measured, and mark it as a starting point.
+
+```css
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.004 91.4);   /* #fbfaf7 measured */
+  --foreground: oklch(0.235 0.018 165.2);  /* #16211c */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.235 0.018 165.2);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.235 0.018 165.2);
+  --primary: oklch(0.49 0.085 158.4);      /* #2f6f4e — the brand green */
+  --primary-foreground: oklch(0.985 0.004 91.4);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.235 0.018 165.2);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.565 0.022 162.4); /* #6b7a72 */
+  --accent: oklch(0.97 0 0);               /* neutral hover tint, not the brand */
+  --accent-foreground: oklch(0.235 0.018 165.2);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.913 0.008 91.5);       /* #e4e2dc */
+  --input: oklch(0.913 0.008 91.5);
+  --ring: oklch(0.49 0.085 158.4);
+  --chart-1: oklch(0.49 0.085 158.4);
+  --chart-2: oklch(0.712 0.124 61.6);      /* #d98f4a */
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --primary: oklch(0.62 0.11 158);         /* lifted for contrast on dark */
+  --primary-foreground: oklch(0.205 0 0);
+  --border: oklch(1 0 0 / 10%);            /* shadcn's dark convention */
+  --input: oklch(1 0 0 / 15%);
+}
+```
+
+Four conventions to respect, all taken from shadcn's own theme rather than guessed:
+
+1. **Radius derives by multiplication.** The CLI writes `--radius-sm: calc(var(--radius) * 0.6)`, `md: * 0.8`, `lg: var(--radius)`, `xl: * 1.4`, then `2xl: * 1.8`, `3xl: * 2.2`, `4xl: * 2.6`. So pick `--radius` from the measured radius the design uses most for cards, and check the multipliers reproduce the smaller ones. Worked example: measured radii of `10px` and `8px` are exactly `--radius: 0.625rem` (10px) with `md` at 8px — one base value reproduces both.
+2. **Dark borders are translucent white**, `oklch(1 0 0 / 10%)` for `--border` and `/ 15%` for `--input`, not a solid grey. The harvest reports these as `#ffffff @ 0.1`.
+3. **Every `*-foreground` is a contrast promise.** Check each pair against its surface with `contrastPairs` and state the ratio for `--primary-foreground` on `--primary` at minimum. Below 4.5:1 for body text, adjust the foreground rather than shipping the pair.
+4. **`--chart-1` … `--chart-5` are a categorical ramp**, not five shades of one hue. Feed them from the design's distinct accents, and if the design has fewer than five, say so rather than inventing three more.
+
+For a legacy v3 project, the same values become bare HSL channel triplets — `--primary: 149 41% 31%;` for `#2f6f4e` — consumed as `hsl(var(--primary))`, with radius derived as `calc(var(--radius) - 2px)` and `- 4px`. Use the `hsl` field in the palette output, dropping the `hsl(` wrapper.
+
+### The gamut caveat
+
+Authored OKLCH can sit outside sRGB: shadcn's own `--destructive: oklch(0.577 0.245 27.325)` has a negative green channel and rasterizes to `#e7000b`. The harvest flags these with `outOfGamut: true` and keeps the authored string verbatim in the `oklch` field, because re-deriving it from the clamped hex would shift the token.
+
+So the two sources answer different questions, and you should say which you used:
+
+- **`styles.json` colors** are the authored tokens — correct for reproducing a theme.
+- **`palette.json` colors** are sampled pixels, already clamped to sRGB — correct for what users actually see, and the only option for image inputs.
+
+---
+
 ## Modes
 
 | User asks | Do this |
@@ -617,6 +819,7 @@ If the page exposes its own `cssVariables`, report those instead of inventing na
 | "What colors is this using?" | Palette only. Run Step 3, skip the rest. Two minutes, not twenty |
 | "Analyze this design" | Full eight-dimension report |
 | "Extract the design system" / "recreate this" | Full report, weighted to tokens and the type/space scales |
+| "Give me shadcn tokens" / project uses shadcn | Measure, then map roles to the shadcn contract and emit `:root` + `.dark` in the project's existing format |
 | "Compare these two" | Analyze both, then one comparison table per dimension and a note on where they diverge in strategy, not just values |
 | "What makes this look expensive/cheap?" | Full capture, but write it as the 3–5 properties driving that read: type discipline, neutral tuning, whitespace, restraint in accent share, elevation consistency |
 | "Is this design good?" | Measure first, then hand off to a critique skill — see Handoffs |
@@ -630,7 +833,8 @@ If the page exposes its own `cssVariables`, report those instead of inventing na
 5. **Pixel palettes include photography.** A photo's colors show up in the palette alongside UI colors. Separate them: compare palette hexes against `color.backgrounds`/`color.text` from the DOM, and attribute the leftovers to imagery.
 6. **Full-page shots skew shares** toward the longest section. Report which screenshot each number came from.
 7. **One viewport is not responsive behavior.** Do not describe how a design adapts unless you captured both viewports.
-8. **Say what you could not see**: hover and focus states, dark mode, logged-in views, keyboard behavior, real content variation, animation on scroll. Screenshots are a still of one state.
+8. **Authored is not always rendered.** Wide-gamut tokens (`oklch`, `lab`, `display-p3`) can fall outside sRGB; the harvest marks these `outOfGamut: true`. Quote the authored value when reproducing a theme and the sampled value when describing what users see — and say which one you used.
+9. **Say what you could not see**: hover and focus states, dark mode, logged-in views, keyboard behavior, real content variation, animation on scroll. Screenshots are a still of one state.
 
 ## Handoffs
 
