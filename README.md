@@ -36,6 +36,7 @@ Re-install or update existing skills:
 
 | Skill | What it does |
 |---|---|
+| `design-analysis` | Screenshots a URL (or takes an image) and returns measured design data: typography, palette with area shares (hex + OKLCH), composition, imagery, spacing, shape, motion — then emits it as shadcn/ui tokens |
 | `general-design-review` | Runs a compact UX, product, and AI design review across the existing frameworks |
 | `accessibility` | Reviews screenshots, mockups, and flows against WCAG 2.1 accessibility guidelines |
 | `ux-heuristics-review` | Audits any UI against Nielsen's 10 Usability Heuristics |
