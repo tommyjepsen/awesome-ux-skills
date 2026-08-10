@@ -1,164 +1,128 @@
 ---
 name: low-effort-high-reward
-description: Turn a list of problems, bugs, complaints, or "things we should fix" into a ranked low-effort / high-reward plan, with effort estimated from the actual codebase rather than guessed. Use this skill whenever a user drops a backlog, a bug list, an audit result, a review, retro notes, a set of TODOs, or a single vague problem and asks what to fix first. Trigger on phrases like "what are the quick wins", "low hanging fruit", "what should I fix first", "prioritize this list", "which of these is cheapest", "biggest bang for the buck", "is this worth fixing", "triage this", "where do I start", "we don't have time for all of this", or when the user pastes findings from any audit or review skill and asks what to do about them. Also trigger when a previous skill just produced a list of issues and the user needs it turned into an ordered plan.
+description: Rank a list of things to do by effort (low / medium / high) against reward (low / medium / high), so it's obvious what to do first. Run it inside a codebase and it uses the actual code to judge how much work each item really is. Use this skill whenever someone drops a backlog, a bug list, an audit result, retro notes, a set of TODOs, or a vague pile of "things we should fix" and wants it ordered. Trigger on phrases like "what are the quick wins", "low hanging fruit", "what should I fix first", "prioritize this list", "which of these is cheapest", "biggest bang for the buck", "is this worth doing", "triage this", "where do I start", "we don't have time for all of this", or when someone pastes findings from any audit or review and asks what to do about them.
 ---
 
 # Low Effort / High Reward
 
-Take a pile of "things that need fixing" and turn it into an ordered plan, where **effort is measured against the code that actually exists**, not estimated in the abstract.
+Take a list of things to do and sort it into a simple grid: how much work is it, and how much does it pay off. Then say what to do first.
 
-The whole value of this skill is that last part. Anyone can guess that "fix the empty states" is medium effort. Only something reading the repo can tell you it's a 20-minute change because there's already an `<EmptyState>` component and three call sites — or a two-week change because empty states are hand-rolled in 47 files.
-
----
-
-## When to use this
-
-- A backlog, bug list, retro, audit, or review produced more items than there is time for
-- Someone asks "what should we do first" and the honest answer depends on the code
-- A single problem is framed as urgent and you need to know if it's cheap
-- Output from another skill (`accessibility`, `ux-heuristics-review`, `craft`, `cognitive-load-conversion`, `dieter-rams-principles`, `like-wish-what-if`) needs to become a plan
-
-If the user wants a full weighted matrix with team voting and workshop facilitation, use `feature-prioritization` instead. This skill is the fast, code-grounded version for one person deciding what to do this week.
+Run inside a codebase, it looks at the real code before judging effort — because "add empty states" is ten minutes if there's already an empty-state component, and a week if there isn't.
 
 ---
 
 ## Process
 
-### 1. Split the input into atomic items
+### 1. Make it a clean list
 
-Rewrite whatever you were given as a flat list of discrete, independently shippable items.
+Rewrite whatever you were given as separate items, one thing per line. Split anything compound — "the dashboard is slow and confusing" is two items and they'll score differently. Don't drop anything; if something can't be scored, park it at the bottom with the one question that would unblock it.
 
-- One item = one thing you could ship on its own. "Improve onboarding" is not an item; "remove the company-size field from signup" is.
-- Split compound complaints. "The dashboard is slow and confusing" is two items, and they will land in different quadrants.
-- If the user gave you one vague problem ("checkout feels bad"), first decompose it into candidate fixes, then rank those.
-- Keep the user's original wording next to your rewrite so they can still recognise their own list.
+### 2. Take a look at the code
 
-Never silently drop an item. If something can't be scored, list it under **Needs more information** with the specific question that would unblock it.
+If you're in a codebase, spend a minute on each item before guessing at effort:
 
-### 2. Ground every item in the codebase — before scoring
+- Where does this live? Search for the text, the component, the screen.
+- Does something like it already exist that you could copy or reuse?
+- How many places would change — one file, or forty?
+- Is it a copy/config/styling change, or does it touch how the app actually works?
+- Does it touch anything scary — login, payments, data, permissions?
 
-This is mandatory and it is the step to spend time on. For each item, actually go look. Useful moves:
+You don't need to be exhaustive. One honest look per item is enough to stop the effort scores from being fiction.
 
-| Question | How to answer it |
-|---|---|
-| Where does this live? | Grep for the string, component name, route, or error message |
-| How many places change? | Count call sites / imports / usages of the thing being changed |
-| Does the abstraction already exist? | Search for an existing component, hook, util, token, or helper that does 80% of it |
-| Is it config or structure? | A token, constant, feature flag, or copy string is minutes. A prop-drilled state change is days. |
-| What breaks? | Check tests touching those files, and what else imports them |
-| Has someone tried before? | `git log` / `git blame` on the file, plus TODO/FIXME comments nearby |
-| Is it load-bearing? | Is this in the auth path, payment path, data model, or a shared layout? |
+If there's no codebase to look at, just say so at the top and score from experience.
 
-Record one concrete code fact per item — a file path, a call-site count, a component name. Every effort score must be traceable to something you actually saw.
+### 3. Score effort: low / medium / high
 
-If you genuinely cannot inspect the code (no repo access, design-only discussion), say so explicitly at the top of the output and mark all effort scores as **unverified estimates**. Do not quietly fake it.
-
-### 3. Score effort (1–5), anchored in what you found
-
-| Score | Means | Code signals |
+| | Roughly | Looks like |
 |---|---|---|
-| **1 — Trivial** | Under an hour | Copy, a constant, a token, one CSS rule, deleting a field, flipping a flag. 1–2 files. |
-| **2 — Small** | Half a day | One component, existing abstraction covers it, few call sites, tests already exist |
-| **3 — Medium** | A few days | New component or endpoint, 5–15 files touched, some tests to write |
-| **4 — Large** | 1–2 weeks | Crosses layers (UI + API + data), migration needed, touches shared state |
-| **5 — Structural** | Weeks+ | Schema change, auth/payments, dependency swap, rewrite of a core abstraction |
+| **Low** | Hours | Copy, colors, spacing, a setting, removing something, one small component. Reuses what's already there. |
+| **Medium** | Days | A new component or screen, several files, some new logic, needs testing. |
+| **High** | Weeks | Touches the data model, login, payments, or spreads across the whole app. Needs a migration or a rethink. |
 
-Adjustments — apply and state them:
-- **+1** if it touches auth, payments, billing, permissions, or the data model
-- **+1** if there are no tests near the change and the code is non-obvious
-- **+1** if it needs a migration, a backfill, or coordinated deploy
-- **−1** if the exact pattern already exists elsewhere in the repo and can be copied
+Bump an item up a level if it touches login, payments, or data — those are never as small as they look.
 
-### 4. Score reward (1–5)
+### 4. Score reward: low / medium / high
 
-| Score | Means |
+| | Means |
 |---|---|
-| **1** | One person noticed once |
-| **2** | Mild annoyance, easy workaround exists |
-| **3** | Recurring friction for a real segment, or a visible quality/craft gap |
-| **4** | Blocks a core task, loses users at a known drop-off, or a real accessibility barrier |
-| **5** | Users leave, lose money, lose data, or can't complete the primary job |
+| **Low** | One person mentioned it once. Nice, not needed. |
+| **Medium** | Recurring annoyance, or a visible quality gap. There's a workaround. |
+| **High** | Blocks people from doing the main thing, loses users or money, or is a real accessibility problem. |
 
-Adjustments:
-- **+1** if it sits on the main path every user walks through
-- **+1** if it unblocks or cheapens other items on the list (leverage)
-- **+1** if it's a legal, safety, or accessibility compliance risk
-- **−1** if the reward is assumed rather than observed — and mark it as an assumption
+Bump an item up a level if it's on the path every single user walks through, or if doing it makes several other items on the list cheaper.
 
-### 5. Place each item
+### 5. Put it in the grid
 
 ```
-High reward │  Big bets          │  ⭐ QUICK WINS
-    (4–5)   │  (plan them)       │  (do this week)
-   ─────────┼────────────────────┼─────────────────
-Low reward  │  Don't             │  Fill-in work
-    (1–3)   │  (delete the item) │  (batch or ignore)
-            └────────────────────┴─────────────────
-              Effort 3–5            Effort 1–2
+              LOW EFFORT      MEDIUM EFFORT     HIGH EFFORT
+
+HIGH REWARD   ⭐ Do first      Do next          Plan it in
+
+MED REWARD    Do next         Maybe later      Skip
+
+LOW REWARD    Fill-in work    Skip             Skip
 ```
 
-Then order the quick-wins quadrant (low effort, high reward) by **reward ÷ effort**, highest first. Ties break toward whatever touches the least load-bearing code.
+Order within each group by reward first, then by whichever is least risky to touch.
 
-### 6. Call out the traps
+### 6. Flag the surprises
 
-The most useful thing this skill produces is often not the ranking — it's the two lists people get wrong:
+Two things people always get wrong, and both come out of step 2:
 
-- **Looks cheap, isn't.** "Just change the date format" → the format is duplicated in 12 files and one of them is a CSV export another team parses. Say exactly what makes it expensive.
-- **Looks expensive, isn't.** "Full accessibility pass" → 80% of the findings are one shared `<Button>` and a missing `<label>` helper. Say exactly what makes it cheap.
+- **Looks easy, isn't** — say plainly why. "That text appears in nine places, one of them is an email template."
+- **Looks hard, isn't** — say plainly why. "Almost all of it is one shared button component."
 
-Both come straight out of step 2. If step 2 was done properly, you will have at least one of each.
+If you looked at the code properly you'll usually have at least one of each. They're often the most useful thing in the whole answer.
 
 ---
 
-## Output format
+## Output
 
-Lead with the answer. The user wants to know what to do Monday morning.
+Keep it short and skimmable. Lead with what to do first.
 
 ```markdown
-## Do these first
+## Do first — low effort, high reward
 
-1. **[Item]** — effort 1, reward 4
-   `path/to/file.tsx:88` — the label is hardcoded in one place, no tests depend on it.
-   Why it pays: it's the first thing on the signup form and 3 support tickets name it.
-
+1. **[Thing]** — an hour. [One plain sentence: where it lives / why it's small.]
+   Pays off because: [one sentence].
 2. ...
 
-## Worth planning (high reward, real cost)
+## Do next
 
-- **[Item]** — effort 4, reward 5 — touches `api/orders` + schema migration. Needs a real slot, not a spare afternoon.
+- **[Thing]** — low effort, medium reward — [one line]
+- **[Thing]** — medium effort, high reward — [one line]
 
-## Traps
+## Plan it in — worth it, but it's real work
 
-- **Looks cheap, isn't:** [item] — [the specific code reason]
-- **Looks expensive, isn't:** [item] — [the specific code reason]
+- **[Thing]** — high effort, high reward — [one line on what makes it big]
+
+## Surprises
+
+- **Looks easy, isn't:** [thing] — [why]
+- **Looks hard, isn't:** [thing] — [why]
 
 ## Skip
 
-- **[Item]** — low reward, and the fix touches [X]. Not worth it unless [condition changes].
+- **[Thing]** — [one line on why it's not worth it]
 
-## Needs more information
+## Everything, at a glance
 
-- **[Item]** — I can't score reward without [the specific missing fact].
-
-## Full ranking
-
-| # | Item | Effort | Reward | R/E | Where it lives |
-|---|------|--------|--------|-----|----------------|
+| Thing | Effort | Reward | Verdict |
+|---|---|---|---|
 ```
 
-Rules for the write-up:
-- Every effort score cites a file, a count, or a component name. No bare numbers.
-- Keep "Do these first" to 3–7 items. A list of 20 quick wins is not a plan.
-- If the user only wants the top item, give them the top item and stop.
-- Offer to implement the top quick win at the end — don't start without being asked.
+Rules:
+- Plain language. No jargon, no scores out of five, no formulas.
+- One or two sentences per item, maximum.
+- Keep "Do first" to 3–7 things. Twenty quick wins isn't a plan.
+- Say when you're guessing rather than dressing a guess up as a fact.
+- Offer to do the top item at the end — but don't start until asked.
 
 ---
 
-## Anti-patterns
+## Avoid
 
-- **Scoring from the description alone.** If you didn't open the code, you're guessing, and the user could have guessed too.
-- **Averaging effort across an item you didn't split.** Compound items always score wrong.
-- **Treating "low effort" as the only axis.** A cheap fix nobody benefits from is still waste — it belongs in *Fill-in*, not *Do first*.
-- **Padding the list.** Items that should be deleted should be deleted, and you should say so.
-- **Hiding uncertainty in a confident number.** Mark assumed reward as assumed and unverified effort as unverified.
-- **Silently reordering by your own taste.** The ratio decides the order; if you override it, say why.
+- Guessing effort without looking at the code when the code is right there.
+- Scoring a compound item instead of splitting it.
+- Treating cheap as the same thing as worth doing — cheap and pointless is still fill-in work.
+- Keeping items on the list out of politeness. If it should be dropped, say so.
