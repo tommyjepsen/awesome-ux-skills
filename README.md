@@ -45,6 +45,7 @@ Re-install or update existing skills:
 | `cognitive-load-conversion` | Finds extraneous load in forms, flows, and layouts — and cuts it |
 | `persuasive-ux` | Applies Fogg's 7 Persuasive Technology tools to improve engagement and conversion |
 | `feature-prioritization` | Ranks features or backlog items using a weighted 2D prioritization matrix |
+| `low-effort-high-reward` | Sorts a list of things to do into a low / medium / high effort vs. reward grid, using the codebase it's run in to judge the real effort |
 
 ### AI Product Design
 
