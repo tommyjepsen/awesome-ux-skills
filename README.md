@@ -25,6 +25,7 @@ Re-install or update existing skills:
 | Skill | What it does |
 |---|---|
 | `ux-research-methods` | Recommends the right research method (interviews, usability tests, surveys, A/B tests…) for the stage and question |
+| `usability-test-analysis` | Turns usability test notes, recordings, or transcripts into severity ranked findings with participant counts, evidence, and fixes |
 | `ux-personas` | Turns interview notes, surveys, or segments into structured, research-based personas |
 | `empathy-mapping` | Creates Says / Thinks / Does / Feels maps from qualitative research |
 | `journey-mapping` | Maps user actions, emotions, and pain points across a timeline |
